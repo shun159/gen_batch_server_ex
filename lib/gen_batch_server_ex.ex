@@ -44,7 +44,7 @@ defmodule GenBatchServerEx do
             do: do_handle_batch(actions, rest, [element | state])
 
           defp do_handle_batch(actions, [{:call, from, :pop} | rest], [head | tail]),
-            do: do_handle_batch([{:reply, from, head} | actions], rest, [element | state])
+            do: do_handle_batch([{:reply, from, head} | actions], rest, tail)
         end
 
         # Start the server
