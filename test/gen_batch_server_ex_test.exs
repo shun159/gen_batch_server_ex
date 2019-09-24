@@ -8,8 +8,8 @@ defmodule GenBatchServerExTest do
       {:ok, stack}
     end
 
-    def handle_batch(batch, state) do
-      do_handle_batch([], batch, state)
+    def handle_batch(commands, state) do
+      handle_commands([], commands, state)
     end
 
     def terminate(_reason, _state) do
@@ -25,32 +25,42 @@ defmodule GenBatchServerExTest do
       _ -> :ok
     end
 
-    # private functions
+  # private functions
 
-    defp do_handle_batch(actions, [], state),
+    defp handle_commands(actions, [], state),
       do: {:ok, actions, state}
 
-    defp do_handle_batch(actions, [{:cast, {:push, element}} | rest], state),
-      do: do_handle_batch(actions, rest, [element | state])
+    defp handle_commands(actions, [command | rest], state) do
+      case command do
+        {:cast, {:push, element}} ->
+          handle_commands(actions, rest, [element | state])
 
-    defp do_handle_batch(actions, [{:call, from, :pop} | rest], [head | tail]),
-      do: do_handle_batch([{:reply, from, head} | actions], rest, tail)
+        {:call, from, :pop} ->
+          handle_commands([{:reply, from, hd(state)} | actions], rest, tl(state))
 
-    defp do_handle_batch(actions, [{:call, _from, :noreply} | rest], state),
-      do: do_handle_batch(actions, rest, state)
+        {:call, _from, :noreply} ->
+          handle_commands(actions, rest, state)
 
-    defp do_handle_batch(actions, [{:call, from, :stop_self} | rest], state),
-      do: do_handle_batch([{:reply, from, catch_exit(GenBatchServerEx.stop(self()))} | actions], rest, state)
+        {:call, from, :stop_self} ->
+          reason = catch_exit(GenBatchServerEx.stop(self()))
+          action = {:reply, from, reason}
+          handle_commands([action | actions], rest, state)
+      end
+    end
   end
 
   test "generates child_spec/1" do
     assert Stack.child_spec([:hello]) == %{
-      id: Stack,
-      start: {Stack, :start_link, [[:hello]]}
-    }
+             id: Stack,
+             start: {Stack, :start_link, [[:hello]]}
+           }
 
     defmodule CustomStack do
-      use GenBatchServerEx, id: :id, restart: :temporary, shutdown: :infinity, start: {:foo, :bar, []}
+      use GenBatchServerEx,
+        id: :id,
+        restart: :temporary,
+        shutdown: :infinity,
+        start: {:foo, :bar, []}
 
       def init(args) do
         {:ok, args}
@@ -58,11 +68,11 @@ defmodule GenBatchServerExTest do
     end
 
     assert CustomStack.child_spec([:hello]) == %{
-      id: :id,
-      restart: :temporary,
-      shutdown: :infinity,
-      start: {:foo, :bar, []}
-    }
+             id: :id,
+             restart: :temporary,
+             shutdown: :infinity,
+             start: {:foo, :bar, []}
+           }
   end
 
   test "start_link/3" do
@@ -98,7 +108,7 @@ defmodule GenBatchServerExTest do
     assert GenBatchServerEx.call(:stack, :pop) == :hello
   end
 
-  test "start_link/2, call/2 and cast/2" do
+  test "start_link/2, call/2, cast/2 and cast_batch/2" do
     {:ok, pid} = GenBatchServerEx.start_link(Stack, [:hello])
 
     {:links, links} = Process.info(self(), :links)
@@ -106,12 +116,17 @@ defmodule GenBatchServerExTest do
 
     assert GenBatchServerEx.call(pid, :pop) == :hello
     assert GenBatchServerEx.cast(pid, {:push, :world}) == :ok
+    assert GenBatchServerEx.cast_batch(pid, [{:cast, {:push, :world}}]) == :ok
     assert GenBatchServerEx.call(pid, :pop) == :world
     assert GenBatchServerEx.stop(pid) == :ok
 
     assert GenBatchServerEx.cast({:global, :foo}, {:push, :world}) == :ok
     assert GenBatchServerEx.cast({:via, :foo, :bar}, {:push, :world}) == :ok
     assert GenBatchServerEx.cast(:foo, {:push, :world}) == :ok
+
+    assert GenBatchServerEx.cast_batch({:global, :foo}, [{:cast, {:push, :world}}]) == :ok
+    assert GenBatchServerEx.cast_batch({:via, :foo, :bar}, [{:cast, {:push, :world}}]) == :ok
+    assert GenBatchServerEx.cast_batch(:foo, [{:cast, {:push, :world}}]) == :ok
   end
 
   @tag capture_log: true
@@ -145,7 +160,8 @@ defmodule GenBatchServerExTest do
              {:noproc, {GenBatchServerEx, :call, [stopped_pid, :pop, 5000]}}
 
     assert catch_exit(GenBatchServerEx.call({:stack, :bogus_node}, :pop, 5000)) ==
-             {{:nodedown, :bogus_node}, {GenBatchServerEx, :call, [{:stack, :bogus_node}, :pop, 5000]}}
+             {{:nodedown, :bogus_node},
+              {GenBatchServerEx, :call, [{:stack, :bogus_node}, :pop, 5000]}}
   end
 
   test "nil name" do
@@ -184,15 +200,15 @@ defmodule GenBatchServerExTest do
     stopped_pid = pid
 
     assert catch_exit(GenBatchServerEx.stop(stopped_pid)) ==
-    {:noproc, {GenBatchServerEx, :stop, [stopped_pid, :normal, :infinity]}}
+             {:noproc, {GenBatchServerEx, :stop, [stopped_pid, :normal, :infinity]}}
 
     assert catch_exit(GenBatchServerEx.stop(nil)) ==
-    {:noproc, {GenBatchServerEx, :stop, [nil, :normal, :infinity]}}
+             {:noproc, {GenBatchServerEx, :stop, [nil, :normal, :infinity]}}
 
     {:ok, pid} = GenBatchServerEx.start(Stack, [])
 
     assert GenBatchServerEx.call(pid, :stop_self) ==
-    {:calling_self, {GenBatchServerEx, :stop, [pid, :normal, :infinity]}}
+             {:calling_self, {GenBatchServerEx, :stop, [pid, :normal, :infinity]}}
 
     {:ok, _} = GenBatchServerEx.start(Stack, [], name: name)
     assert GenBatchServerEx.stop(name, :normal) == :ok

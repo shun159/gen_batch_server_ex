@@ -189,7 +189,7 @@ defmodule GenBatchServerEx do
 
   def start_link(module, init_arg, options)
       when is_atom(module) and is_list(options) do
-    do_start(:link, module, init_arg, options)
+    do_start(:link, module, init_arg, put_default_options(options))
   end
 
   @spec start(module, any, [option]) :: on_start
@@ -197,7 +197,16 @@ defmodule GenBatchServerEx do
 
   def start(module, init_arg, options)
       when is_atom(module) and is_list(options) do
-    do_start(:nolink, module, init_arg, options)
+    do_start(:nolink, module, init_arg, put_default_options(options))
+  end
+
+  @default_min_batch_size 32
+  @default_max_batch_size 8192
+
+  defp put_default_options(options) do
+    options
+    |> Keyword.put_new(:min_batch_size, @default_min_batch_size)
+    |> Keyword.put_new(:max_batch_size, @default_max_batch_size)
   end
 
   defp do_start(link, module, init_arg, options) do
@@ -298,14 +307,14 @@ defmodule GenBatchServerEx do
     do: {:"$gen_cast", req}
 
   @spec cast_batch(server, term) :: :ok
-  def cast_batch({:global, name}, batch) do
+  def cast_batch({:global, name}, batch) when is_list(batch) do
     :global.send(name, cast_batch_msg(batch))
     :ok
   catch
     _, _ -> :ok
   end
 
-  def cast_batch({:via, mod, name}, batch) do
+  def cast_batch({:via, mod, name}, batch) when is_list(batch) do
     mod.send(name, cast_batch_msg(batch))
   catch
     _, _ -> :ok

@@ -1,21 +1,35 @@
 # GenBatchServerEx
 
-**TODO: Add description**
+Elixir wrapper of `rabbitmq/gen-batch-server`
 
-## Installation
-
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `gen_batch_server_ex` to your list of dependencies in `mix.exs`:
+usage:
 
 ```elixir
-def deps do
-  [
-    {:gen_batch_server_ex, "~> 0.1.0"}
-  ]
+defmodule Stack do
+  use GenBatchServerEx
+
+  def init(stack) do
+    {:ok, stack}
+  end
+
+  def handle_batch(commands, state) do
+    handle_commands([], commands, state)
+  end
+
+  # private functions
+
+  defp handle_commands(actions, [], state),
+    do: {:ok, actions, state}
+
+  defp handle_commands(actions, [command | rest], state) do
+    case command do
+      {:cast, {:push, element}} ->
+        handle_commands(actions, rest, [element | state])
+
+      {:call, from, :pop} ->
+        action = {:reply, from, hd(state)}
+        handle_commands([action | actions], rest, tl(state))
+    end
+  end
 end
 ```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/gen_batch_server_ex](https://hexdocs.pm/gen_batch_server_ex).
-
