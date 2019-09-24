@@ -1,0 +1,3 @@
+%{
+  "gen_batch_server": {:hex, :gen_batch_server, "0.8.0", "88dcebf05036335c2163a1ed4baae6c10ad0e97fcc617cea8a0223e3404f05a1", [:rebar3], [], "hexpm"},
+}
