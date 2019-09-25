@@ -1,15 +1,15 @@
-defmodule GenBatchServerEx do
+defmodule GenBatchServer do
   @moduledoc """
   A behaviour module for implementing the batch server.
 
-  `GenBatchServerEx` is a stateful generic server similar to
+  `GenBatchServer` is a stateful generic server similar to
   GenServer that instead of processing incoming requests
   one by one gathers them into batches before they are
   passed to the behaviour implementation.
 
   Batches are processed _either_ when the Erlang process mailbox has no further
   messages to batch _or_ when the number of messages in the current batch reaches the maximum batch size
-  limit. `GenBatchServerEx` tries to trade latency for throughput by automatically growing the max batch
+  limit. `GenBatchServer` tries to trade latency for throughput by automatically growing the max batch
   size limit when message ingress is high and shrinks it down again as ingress
   reduces.
 
@@ -18,14 +18,14 @@ defmodule GenBatchServerEx do
   would be a log writer that needs to flush messages to disk using `file:sync/1`
   without undue delay or a metrics sink that aggregates metrics from multiple
   processes and writes them to an external service. It could also be beneficial
-  to use `GenBatchServerEx` to proxy a bunch of processes that want to update
+  to use `GenBatchServer` to proxy a bunch of processes that want to update
   some resource (such as a `dets` table) that doesn't handle casts.
 
   Let's start with a code example and then explore the available callbacks.
-  Imagine we want a GenBatchServerEx that works like a stack, allowing us to push and pop elements:
+  Imagine we want a GenBatchServer that works like a stack, allowing us to push and pop elements:
 
         defmodule Stack do
-          use GenBatchServerEx
+          use GenBatchServer
 
           def init(stack) do
             {:ok, stack}
@@ -48,14 +48,14 @@ defmodule GenBatchServerEx do
         end
 
         # Start the server
-        {:ok, pid} = GenBatchServerEx.start_link(Stack, [:hello])
+        {:ok, pid} = GenBatchServer.start_link(Stack, [:hello])
 
         # This is the client
-        GenBatchServerEx.call(pid, :pop)
+        GenBatchServer.call(pid, :pop)
 
-        GenBatchServerEx.cast(pid, {:push, :world})
+        GenBatchServer.cast(pid, {:push, :world})
 
-        GenBatchServerEx.call(pid, :pop)
+        GenBatchServer.call(pid, :pop)
 
   We start our `Stack` by calling `start_link/2`, passing the module
   with the server implementation and its initial argument (a list
@@ -68,7 +68,7 @@ defmodule GenBatchServerEx do
   @typedoc "Debug options supported by the `start*` functions"
   @type debug :: [:trace | :log | :statistics | {:log_to_file, Path.t()}]
 
-  @typedoc "The GenBatchServerEx name"
+  @typedoc "The GenBatchServer name"
   @type name :: atom | {:global, term} | {:via, module, term}
 
   @type option ::
@@ -115,6 +115,8 @@ defmodule GenBatchServerEx do
   @doc false
   defmacro __using__(opts) do
     quote location: :keep, bind_quoted: [opts: opts] do
+      @behaviour GenBatchServer
+
       if Module.get_attribute(__MODULE__, :doc) == nil do
         @doc """
         Returns a specification to start this module under a supervisor.
@@ -140,7 +142,7 @@ defmodule GenBatchServerEx do
         # We do this to trick Dialyzer to not complain about non-local returns.
         case :erlang.phash2(1, 1) do
           0 ->
-            raise "attempted to cast GenBatchServerEx #{inspect(proc)} but no handle_batch/2 clause was provided"
+            raise "attempted to cast GenBatchServer #{inspect(proc)} but no handle_batch/2 clause was provided"
 
           1 ->
             {:stop, {:bad_batch, batch}, state}
@@ -159,7 +161,7 @@ defmodule GenBatchServerEx do
   defmacro __before_compile__(env) do
     unless Module.defines?(env.module, {:init, 1}) do
       message = """
-      function init/1 required by behaviour GenBatchServerEx is not implemented \
+      function init/1 required by behaviour GenBatchServer is not implemented \
       (in module #{inspect(env.module)}).
       We will inject a default implementation for now:
 
@@ -168,7 +170,7 @@ defmodule GenBatchServerEx do
           end
 
       You can copy the implementation above or define your own that converts \
-      the arguments given to GenBatchServerEx.start_link/3 to the server state.
+      the arguments given to GenBatchServer.start_link/3 to the server state.
       """
 
       IO.warn(message, Macro.Env.stacktrace(env))

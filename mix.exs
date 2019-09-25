@@ -1,4 +1,4 @@
-defmodule GenBatchServerEx.MixProject do
+defmodule GenBatchServer.MixProject do
   use Mix.Project
 
   def project do
